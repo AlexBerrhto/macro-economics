@@ -1,0 +1,661 @@
+from IPython.display import HTML, display
+
+fixed_game_code = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Macroeconomic Simulator</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { background-color: #121222; color: #e0e0e0; margin: 0; padding: 10px; position: relative; }
+  h1 { text-align: center; color: #4eefa8; margin: 0 0 4px 0; font-size: 22px; }
+  .subtitle { text-align: center; color: #a0a0c0; font-size: 12px; margin-bottom: 12px; }
+  
+  /* Responsive Desktop-First Grid */
+  .game-container { 
+    display: grid; 
+    grid-template-columns: 320px 1fr 320px; 
+    gap: 12px; 
+    max-width: 1600px; 
+    margin: 0 auto; 
+  }
+  .card-panel { background: #1a1a3a; border-radius: 10px; padding: 12px; border: 1px solid #2a2a5a; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+  
+  /* Start Modal */
+  #start-modal, #tile-modal {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10, 15, 29, 0.92);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  }
+  .modal-content {
+    background: #1a1a3a;
+    border: 2px solid #4eefa8;
+    padding: 24px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    max-width: 420px;
+    width: 90%;
+  }
+  
+  .player-selector-group { display: flex; justify-content: center; gap: 8px; margin: 15px 0 20px 0; }
+  .player-opt-btn {
+    background: #263554; color: white; border: 2px solid #374151; border-radius: 8px;
+    padding: 10px 14px; font-size: 15px; font-weight: bold; cursor: pointer; flex: 1; min-height: 44px;
+  }
+  .player-opt-btn.active { background: #4eefa8; color: #121222; border-color: #4eefa8; }
+
+  .btn-start {
+    background: #4eefa8; color: #121222; font-size: 16px; font-weight: bold; border: none;
+    padding: 12px 24px; border-radius: 6px; cursor: pointer; width: 100%; min-height: 48px;
+  }
+
+  /* Shop Items */
+  .shop-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px solid #2a2a5a; font-size: 12px; }
+  
+  /* Responsive Touch Action Buttons */
+  .qty-btn, .btn-sell { 
+    border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; min-height: 38px; min-width: 40px;
+  }
+  .qty-btn { background: #4eefa8; color: #121222; }
+  .qty-btn:disabled, .btn-sell:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-sell { background: #ffbd59; color: #121222; margin-right: 4px; }
+  .btn-quit { background: #e94560; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; min-height: 44px; }
+
+  .timer-box { background: #261628; border: 2px solid #e94560; border-radius: 8px; padding: 6px; text-align: center; font-size: 15px; font-weight: bold; color: #e94560; margin-bottom: 8px; }
+  
+  /* Board & Tiles */
+  .board-outer { 
+    width: 100%; aspect-ratio: 1; background: #0f172a; border-radius: 10px; padding: 6px; 
+    display: grid; grid-template-columns: repeat(11, 1fr); grid-template-rows: repeat(11, 1fr); gap: 2px; position: relative; 
+  }
+  .tile { 
+    background: #182238; border: 1px solid #263554; border-radius: 3px; font-size: 7px; padding: 1px; 
+    text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; cursor: pointer; 
+  }
+  .tile.pos { border-top: 2px solid #4eefa8; }
+  .tile.neg { border-top: 2px solid #e94560; }
+  .tile-center { grid-column: 2 / 11; grid-row: 2 / 11; background: #131b2e; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 8px; text-align: center; z-index: 5; }
+  
+  .action-btn { background: #4eefa8; color: #121222; font-size: 15px; font-weight: bold; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 6px; min-height: 48px; }
+  .action-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+  
+  /* Tokens */
+  .token { 
+    width: 10px; height: 10px; border-radius: 50%; position: absolute; border: 1px solid #ffffff; 
+    transition: left 0.18s linear, top 0.18s linear; z-index: 100; pointer-events: none; 
+  }
+  .token.p0 { background: #4eefa8; } .token.p1 { background: #e94560; } 
+  .token.p2 { background: #3b82f6; } .token.p3 { background: #ffbd59; }
+  
+  .log-box { height: 120px; overflow-y: auto; background: #0a0f1d; border-radius: 6px; padding: 6px; font-family: monospace; font-size: 10px; border: 1px solid #263554; margin-top: 8px; }
+  .log-pos { color: #4eefa8; } .log-neg { color: #e94560; } .log-info { color: #ffbd59; }
+  .milestone-box { background: #111827; border: 1px solid #374151; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; font-size: 10px; margin-top: 6px; }
+
+  /* Mobile Media Query Breakpoint */
+  @media (max-width: 900px) {
+    body { padding: 5px; }
+    h1 { font-size: 18px; }
+    .game-container { display: flex; flex-direction: column; gap: 10px; }
+    
+    /* Order of sections on mobile: Board first, Shop second, Scoreboard last */
+    .game-container > div:nth-child(2) { order: 1; }
+    .game-container > div:nth-child(1) { order: 2; }
+    .game-container > div:nth-child(3) { order: 3; }
+    
+    .board-outer { max-width: 100vw; }
+    .tile { font-size: 5px; }
+    .tile strong { font-size: 5px !important; }
+    .token { width: 8px; height: 8px; }
+    .shop-item { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Start Game Modal -->
+<div id="start-modal">
+  <div class="modal-content">
+    <h2 style="color: #4eefa8; margin-top:0;">📈 Macroeconomic Simulator</h2>
+    <p style="color: #a0a0c0; font-size: 13px;">Select Number of Players:</p>
+    
+    <div class="player-selector-group">
+      <button class="player-opt-btn active" onclick="selectPlayerCount(2, this)">2 Players</button>
+      <button class="player-opt-btn" onclick="selectPlayerCount(3, this)">3 Players</button>
+      <button class="player-opt-btn" onclick="selectPlayerCount(4, this)">4 Players</button>
+    </div>
+
+    <button class="btn-start" onclick="startGame()">🚀 Launch Game</button>
+  </div>
+</div>
+
+<!-- Mobile Tap Inspection Modal -->
+<div id="tile-modal" style="display:none;" onclick="closeTileModal()">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <h3 id="modal-tile-title" style="color:#ffbd59; margin-top:0;">Tile Details</h3>
+    <div id="modal-tile-body" style="text-align:left; font-size:13px; line-height:1.6;"></div>
+    <button class="btn-start" style="margin-top:15px;" onclick="closeTileModal()">Close</button>
+  </div>
+</div>
+
+<h1>📈 Macroeconomic Simulator</h1>
+<div class="subtitle">Touch-Optimized | Dynamic Market | Multi-Sector Competition</div>
+
+<div class="game-container">
+  
+  <!-- Market & Purchases Panel -->
+  <div class="card-panel">
+    <div id="timer-display" class="timer-box">⏱️ Time Left: 02:00</div>
+    <h3 style="margin:0 0 5px 0;">🏬 Dynamic Market</h3>
+    <div id="active-player-info" style="font-weight: bold; color: #4eefa8;">Player 1 Turn</div>
+    <div id="cash-info" style="color: #ffbd59; font-size: 13px; margin-bottom: 8px;">Cash: ₹1,500</div>
+    <div id="shop-list" style="max-height: 280px; overflow-y: auto;"></div>
+    <button class="btn-quit" onclick="quitGame()">🏳️ Quit Game</button>
+  </div>
+
+  <!-- Interactive Central Board -->
+  <div id="board" class="board-outer">
+    <div class="tile-center">
+      <h3 id="turn-indicator" style="color: #ffbd59; margin: 0 0 4px 0; font-size:14px;">Strategic Round (Player 1)</h3>
+      <div id="dice-result" style="font-size: 20px; font-weight: bold; margin: 2px 0;">🎲 Roll Pending</div>
+      
+      <div style="background: #1e293b; padding: 6px; border-radius: 6px; margin: 4px 0; width: 100%; text-align: center;">
+        <strong style="font-size: 10px; color: #4eefa8;">🎯 Strategic Nudge:</strong>
+        <div style="display: flex; gap: 4px; margin-top: 4px;">
+          <button onclick="setNudge(-1)" class="qty-btn" style="flex:1; background:#e94560; color:white; padding:4px;">-1 (₹100)</button>
+          <button onclick="setNudge(0)" class="qty-btn" style="flex:1; padding:4px;">Normal</button>
+          <button onclick="setNudge(1)" class="qty-btn" style="flex:1; background:#e94560; color:white; padding:4px;">+1 (₹100)</button>
+        </div>
+      </div>
+
+      <button id="roll-btn" class="action-btn" onclick="executeTurn()">🎲 Roll & Move</button>
+      <div id="event-card-display" style="margin-top: 4px; font-size: 10px; color: #a0a0c0;">
+        Tap tiles to inspect sector multipliers!
+      </div>
+    </div>
+  </div>
+
+  <!-- Scoreboard & Event Log Panel -->
+  <div class="card-panel">
+    <h3 style="margin:0 0 5px 0;">📊 Scoreboard</h3>
+    <div id="scoreboard-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px; margin-bottom: 8px;"></div>
+
+    <h3 style="margin:0 0 4px 0;">👑 Sector Leaders</h3>
+    <div id="milestones-list" class="milestone-box"></div>
+
+    <h3 style="margin:6px 0 4px 0;">📜 Event Log</h3>
+    <div id="game-log" class="log-box">Awaiting game launch...<br></div>
+  </div>
+
+</div>
+
+<script>
+var RESALE_FACTOR = 0.8;
+var TURN_TIME = 120;
+var THRESHOLD = 25;
+var gameStarted = false;
+var totalPlayersSelected = 2;
+var isAnimating = false;
+
+var sectorData = {
+  "Agriculture": { price: 50 }, "Fisheries": { price: 25 }, 
+  "Mining": { price: 25 }, "Manufacturing": { price: 45 },
+  "Construction": { price: 35 }, "Energy": { price: 20 }, 
+  "Healthcare": { price: 40 }, "Education": { price: 35 },
+  "Logistics": { price: 25 }, "R_and_D": { price: 45 }, 
+  "IT_AI": { price: 35 }, "Aerospace": { price: 20 },
+  "Defense": { price: 40 }, "Welfare": { price: 35 }, 
+  "Climate": { price: 25 }
+};
+
+var sectorLeaders = {};
+for(var sec in sectorData) sectorLeaders[sec] = -1;
+
+var events = [
+  { name: "War & Conflict", impacts: { Agriculture: -4, Logistics: -5, Defense: 5, Aerospace: 2 } },
+  { name: "Tech Breakthrough", impacts: { IT_AI: 5, R_and_D: 5, Manufacturing: 4, Agriculture: 3 } },
+  { name: "Pandemic Crisis", impacts: { Healthcare: -5, Logistics: -5, IT_AI: 3, R_and_D: 2 } },
+  { name: "Infra Megaprojects", impacts: { Construction: 5, Logistics: 5, Energy: 4, Mining: 4 } },
+  { name: "Trade War & Sanctions", impacts: { Manufacturing: -5, Logistics: -4, Agriculture: -3, Defense: 1 } },
+  { name: "Cheap Energy Boom", impacts: { Energy: 5, Manufacturing: 5, Climate: 5, Agriculture: 4 } },
+  { name: "Global Warming Shift", impacts: { Agriculture: -5, Fisheries: -5, Climate: -5, R_and_D: 2 } },
+  { name: "Digitization Surge", impacts: { IT_AI: 5, Logistics: 4, Healthcare: 3, Education: 3 } },
+  { name: "Natural Disaster", impacts: { Construction: -5, Energy: -5, Agriculture: -5, Healthcare: -4 } },
+  { name: "Tax Cuts & Deregulation", impacts: { Manufacturing: 4, Construction: 4, IT_AI: 4, Climate: -1 } },
+  { name: "Energy Oil Shock", impacts: { Energy: -5, Logistics: -5, Manufacturing: -5, Climate: 2 } },
+  { name: "FDI Capital Inflow", impacts: { Manufacturing: 5, IT_AI: 4, Energy: 4, R_and_D: 4 } }
+];
+
+var boardTiles = [];
+for(var i=0; i<40; i++) boardTiles.push(events[i % events.length]);
+
+var allPlayerConfigs = [
+  { name: "Player 1", color: "p0", hex: "#4eefa8", offset: { x: 2, y: 2 } },
+  { name: "Player 2", color: "p1", hex: "#e94560", offset: { x: 12, y: 2 } },
+  { name: "Player 3", color: "p2", hex: "#3b82f6", offset: { x: 2, y: 12 } },
+  { name: "Player 4", color: "p3", hex: "#ffbd59", offset: { x: 12, y: 12 } }
+];
+
+var players = [];
+var activeIdx = 0;
+var rollNudge = 0;
+var timerInterval = null;
+var timeLeft = TURN_TIME;
+
+const socket = io("http://localhost:8000"); 
+
+    // 1. Join Room
+    function joinOnlineLobby() {
+      const name = prompt("Enter your Player Name:") || "Player";
+      socket.emit("join_room", { name: name });
+    }
+
+    // 2. Start Game
+    function triggerStartGame() {
+      socket.emit("start_online_game", {});
+    }
+
+    // 3. Roll Dice
+    function executeTurn() {
+      socket.emit("execute_turn", { nudge: rollNudge });
+    }
+
+    // 4. Buy Card
+    function buyCard(secKey) {
+      socket.emit("buy_card", { sector: secKey });
+    }
+
+    // --- Listeners for Server State Sync ---
+    socket.on("room_update", function(serverState) {
+      console.log("Lobby Updated:", serverState.players);
+    });
+
+    socket.on("game_started", function(serverState) {
+      document.getElementById("start-modal").style.display = "none";
+      renderBoard();
+      renderShop();
+    });
+
+    socket.on("turn_executed", function(data) {
+      document.getElementById("dice-result").innerText = "🎲 " + data.dice_result;
+      renderBoard();
+      renderShop();
+    });
+
+
+function initPlayers(count) {
+  players = [];
+  for(var i=0; i<count; i++) {
+    var cfg = allPlayerConfigs[i];
+    var pCards = {};
+    var pPts = {};
+    for (var sec in sectorData) { pCards[sec] = 0; pPts[sec] = 0; }
+    
+    players.push({
+      id: i, name: cfg.name, cash: 1500, cards: pCards, sectorPts: pPts,
+      pts: 0, pos: 0, active: true, color: cfg.color, hex: cfg.hex, offset: cfg.offset
+    });
+  }
+}
+
+function selectPlayerCount(num, el) {
+  totalPlayersSelected = num;
+  document.querySelectorAll(".player-opt-btn").forEach(function(btn) { btn.classList.remove("active"); });
+  el.classList.add("active");
+}
+
+function startGame() {
+  document.getElementById("start-modal").style.display = "none";
+  gameStarted = true;
+  activeIdx = 0;
+  isAnimating = false;
+  
+  initPlayers(totalPlayersSelected);
+  log("🚀 Game launched with " + totalPlayersSelected + " players! Player 1 begins.", "pos");
+  
+  renderBoard();
+  renderShop();
+  renderScoreboard();
+  renderMilestones();
+  initTokenElements();
+  startTimer();
+}
+
+function startTimer() {
+  if(!gameStarted) return;
+  clearInterval(timerInterval);
+  timeLeft = TURN_TIME;
+  updateTimerUI();
+  
+  timerInterval = setInterval(function() {
+    timeLeft--;
+    updateTimerUI();
+    if(timeLeft <= 0) {
+      clearInterval(timerInterval);
+      log("⏱️ " + players[activeIdx].name + " time expired! Auto-rolling...", "neg");
+      executeTurn();
+    }
+  }, 1000);
+}
+
+function updateTimerUI() {
+  var mins = Math.floor(timeLeft / 60);
+  var secs = timeLeft % 60;
+  var formatted = (mins < 10 ? "0" : "") + mins + ":" + (secs < 10 ? "0" : "") + secs;
+  document.getElementById("timer-display").innerText = "⏱️ Time Left: " + formatted;
+}
+
+function setNudge(val) {
+  if(!gameStarted || isAnimating) return;
+  var p = players[activeIdx];
+  if(val !== 0 && p.cash < 100) { alert("Not enough cash!"); return; }
+  rollNudge = val;
+  log(p.name + " set roll modifier to " + (val > 0 ? '+' + val : val), 'info');
+}
+
+function quitGame() {
+  if(!gameStarted || isAnimating) return;
+  var p = players[activeIdx];
+  if(confirm(p.name + ", are you sure you want to quit?")) {
+    p.active = false;
+    log("🏳️ " + p.name + " has QUIT!", "neg");
+    var tok = document.getElementById("token-" + p.id);
+    if(tok) tok.style.display = "none";
+
+    for(var sec in sectorLeaders) {
+      if(sectorLeaders[sec] === activeIdx) sectorLeaders[sec] = -1;
+    }
+    checkActivePlayers();
+  }
+}
+
+function checkActivePlayers() {
+  var activePlayers = players.filter(function(p) { return p.active; });
+  if(activePlayers.length <= 1) {
+    alert("🎉 " + activePlayers[0].name + " is the last player standing and WINS!");
+    document.getElementById("roll-btn").disabled = true;
+    clearInterval(timerInterval);
+    return;
+  }
+  nextTurn();
+}
+
+function nextTurn() {
+  isAnimating = false;
+  do { activeIdx = (activeIdx + 1) % players.length; } while (!players[activeIdx].active);
+
+  rollNudge = 0;
+  document.getElementById("turn-indicator").innerText = "Strategic Round (" + players[activeIdx].name + ")";
+  document.getElementById("roll-btn").disabled = false;
+  
+  renderShop();
+  renderScoreboard();
+  renderMilestones();
+  startTimer();
+}
+
+/* Touch Modal for Mobile Tile Inspection */
+function inspectTile(idx) {
+  var tileData = boardTiles[idx];
+  document.getElementById("modal-tile-title").innerText = "⚡ #" + (idx + 1) + " " + tileData.name;
+  
+  var html = "<div style='margin-bottom:10px; color:#a0a0c0;'>Sector Point Multipliers:</div>";
+  for(var sec in tileData.impacts) {
+    var val = tileData.impacts[sec];
+    var color = val > 0 ? '#4eefa8' : '#e94560';
+    html += "<div style='display:flex; justify-content:space-between; margin:4px 0;'><span>" + sec + ":</span><strong style='color:" + color + ";'>" + (val > 0 ? '+' + val : val) + " pts</strong></div>";
+  }
+  
+  document.getElementById("modal-tile-body").innerHTML = html;
+  document.getElementById("tile-modal").style.display = "flex";
+}
+
+function closeTileModal() {
+  document.getElementById("tile-modal").style.display = "none";
+}
+
+function renderShop() {
+  var p = players[activeIdx];
+  if(!p) return;
+  document.getElementById("active-player-info").innerText = p.name + "'s Active Turn";
+  document.getElementById("active-player-info").style.color = p.hex;
+  document.getElementById("cash-info").innerText = "Cash: ₹" + p.cash;
+  
+  var list = document.getElementById("shop-list");
+  list.innerHTML = "";
+  
+  for(var sec in sectorData) {
+    (function(secKey) {
+      var price = sectorData[secKey].price;
+      var sellPrice = Math.floor(price * RESALE_FACTOR);
+      var totalOwned = p.cards[secKey];
+      
+      var item = document.createElement("div");
+      item.className = "shop-item";
+      item.innerHTML = "<div><strong>" + secKey + "</strong><br><small style='color:#a0a0c0'>₹" + price + " | Owned: " + totalOwned + "</small></div>";
+      
+      var btnGroup = document.createElement("div");
+      
+      var sellBtn = document.createElement("button");
+      sellBtn.className = "btn-sell";
+      sellBtn.innerText = "−";
+      if(totalOwned <= 0 || isAnimating) sellBtn.disabled = true;
+      sellBtn.onclick = function() { sellCard(secKey); };
+      
+      var buyBtn = document.createElement("button");
+      buyBtn.className = "qty-btn";
+      buyBtn.innerText = "+";
+      if(p.cash < price || isAnimating) buyBtn.disabled = true;
+      buyBtn.onclick = function() { buyCard(secKey); };
+      
+      btnGroup.appendChild(sellBtn);
+      btnGroup.appendChild(buyBtn);
+      item.appendChild(btnGroup);
+      list.appendChild(item);
+    })(sec);
+  }
+}
+
+function buyCard(sec) {
+  if(!gameStarted || isAnimating) return;
+  var p = players[activeIdx];
+  var price = sectorData[sec].price;
+  if(p.cash >= price) {
+    p.cash -= price;
+    p.cards[sec] += 1;
+    log(p.name + " bought 1 " + sec + " card", 'info');
+    renderShop();
+    renderScoreboard();
+  }
+}
+
+function sellCard(sec) {
+  if(!gameStarted || isAnimating) return;
+  var p = players[activeIdx];
+  if(p.cards[sec] > 0) {
+    var sellPrice = Math.floor(sectorData[sec].price * RESALE_FACTOR);
+    p.cash += sellPrice;
+    p.cards[sec] -= 1;
+    log(p.name + " sold 1 " + sec + " card", 'info');
+    renderShop();
+    renderScoreboard();
+  }
+}
+
+function executeTurn() {
+  if(!gameStarted || isAnimating) return;
+  clearInterval(timerInterval);
+  
+  isAnimating = true;
+  document.getElementById("roll-btn").disabled = true;
+  renderShop();
+  
+  var p = players[activeIdx];
+  if(rollNudge !== 0) p.cash -= 100;
+  
+  var d1 = Math.floor(Math.random() * 6) + 1;
+  var d2 = Math.floor(Math.random() * 6) + 1;
+  var totalSteps = d1 + d2 + rollNudge;
+  
+  document.getElementById("dice-result").innerText = "🎲 " + d1 + "+" + d2 + (rollNudge >= 0 ? "+" + rollNudge : rollNudge) + " = " + totalSteps;
+  
+  var stepCount = 0;
+  var moveInterval = setInterval(function() {
+    stepCount++;
+    p.pos = (p.pos + 1) % 40;
+    updateTokenPosition(p);
+    
+    if(stepCount >= totalSteps) {
+      clearInterval(moveInterval);
+      setTimeout(function() { processLandEvent(p, totalSteps); }, 200);
+    }
+  }, 180);
+}
+
+function processLandEvent(p, move) {
+  var tile = boardTiles[p.pos];
+  document.getElementById("event-card-display").innerHTML = "Landed on #" + (p.pos + 1) + ": <strong style='color:#ffbd59;'>" + tile.name + "</strong>";
+  
+  var turnPts = 0;
+  for(var sec in tile.impacts) {
+    var imp = tile.impacts[sec];
+    sectorData[sec].price = Math.max(10, Math.min(100, sectorData[sec].price + imp * 2));
+    
+    var owned = p.cards[sec];
+    if(owned === 0) continue;
+    
+    if(imp > 0) {
+      var addedPts = imp * owned;
+      turnPts += addedPts;
+      p.sectorPts[sec] += addedPts;
+      if(p.sectorPts[sec] >= THRESHOLD && sectorLeaders[sec] !== activeIdx) {
+        sectorLeaders[sec] = activeIdx;
+        log("👑 " + p.name + " is now " + sec + " Leader!", "pos");
+      }
+    } else {
+      var deduction = Math.abs(imp) * owned;
+      turnPts -= deduction;
+      p.sectorPts[sec] = Math.max(0, p.sectorPts[sec] - deduction);
+    }
+  }
+  
+  p.cash += 150; 
+  p.pts += turnPts;
+  
+  log(p.name + " landed on [" + tile.name + "]. Score: " + turnPts + " pts. Cash: +₹150.", turnPts >= 0 ? 'pos' : 'neg');
+  
+  if(p.pts >= 500) {
+    alert("🎉 " + p.name + " wins with " + p.pts + " Points!");
+    document.getElementById("roll-btn").disabled = true;
+    return;
+  }
+
+  nextTurn();
+}
+
+function renderScoreboard() {
+  var grid = document.getElementById("scoreboard-grid");
+  grid.innerHTML = "";
+  players.forEach(function(p) {
+    var card = document.createElement("div");
+    card.style.border = "1px solid " + (p.active ? p.hex : "#444");
+    card.style.padding = "4px";
+    card.style.borderRadius = "4px";
+    card.style.background = p.active ? "#111827" : "#1f1f1f";
+    card.innerHTML = "<strong style='color:" + (p.active ? p.hex : "#777") + ";'>" + p.name + "</strong><br>Pts: " + p.pts + "<br>Cash: ₹" + p.cash;
+    grid.appendChild(card);
+  });
+}
+
+function renderMilestones() {
+  var box = document.getElementById("milestones-list");
+  box.innerHTML = "";
+  for(var sec in sectorLeaders) {
+    var leaderIdx = sectorLeaders[sec];
+    var leaderText = (leaderIdx !== -1 && players[leaderIdx]) ? "<span class='leader-badge' style='color:" + players[leaderIdx].hex + ";'>" + players[leaderIdx].name + "</span>" : "<span style='color:#6b7280;'>None</span>";
+    box.innerHTML += "<div><strong>" + sec + ":</strong> " + leaderText + "</div>";
+  }
+}
+
+function renderBoard() {
+  var boardEl = document.getElementById("board");
+  boardEl.querySelectorAll(".tile").forEach(function(t) { t.remove(); });
+  var coords = [];
+  for(var col=1; col<=11; col++) coords.push({r:1, c:col});
+  for(var row=2; row<=11; row++) coords.push({r:row, c:11});
+  for(var col=10; col>=1; col--) coords.push({r:11, c:col});
+  for(var row=10; row>=2; row--) coords.push({r:row, c:1});
+
+  for(var i=0; i<40; i++) {
+    (function(idx) {
+      var tileData = boardTiles[idx];
+      var pos = coords[idx];
+      var isPos = Object.values(tileData.impacts).some(function(v) { return v > 0; });
+      
+      var tile = document.createElement("div");
+      tile.className = "tile " + (isPos ? 'pos' : 'neg');
+      tile.style.gridRow = pos.r;
+      tile.style.gridColumn = pos.c;
+      tile.id = "tile-" + idx;
+      tile.innerHTML = "<div>#" + (idx + 1) + "</div><strong style='font-size:6px;'>" + tileData.name + "</strong>";
+      
+      tile.onclick = function() { inspectTile(idx); };
+      boardEl.appendChild(tile);
+    })(i);
+  }
+}
+
+function initTokenElements() {
+  document.querySelectorAll(".token").forEach(function(t) { t.remove(); });
+  var boardEl = document.getElementById("board");
+  
+  players.forEach(function(p) {
+    var tok = document.createElement("div");
+    tok.className = "token " + p.color;
+    tok.id = "token-" + p.id;
+    boardEl.appendChild(tok);
+    updateTokenPosition(p);
+  });
+}
+
+function updateTokenPosition(p) {
+  var tok = document.getElementById("token-" + p.id);
+  var tile = document.getElementById("tile-" + p.pos);
+  if(tok && tile) {
+    tok.style.left = (tile.offsetLeft + p.offset.x) + "px";
+    tok.style.top = (tile.offsetTop + p.offset.y) + "px";
+  }
+}
+
+function log(msg, type) {
+  type = type || 'info';
+  var box = document.getElementById("game-log");
+  box.innerHTML = "<div class='log-" + type + "'>• " + msg + "</div>" + box.innerHTML;
+}
+
+initPlayers(2);
+renderBoard();
+renderShop();
+renderScoreboard();
+renderMilestones();
+
+window.onresize = function() {
+  if(gameStarted) {
+    players.forEach(function(p) { if(p.active) updateTokenPosition(p); });
+  }
+};
+
+
+</script>
+</body>
+</html>
+"""
+
+display(HTML(fixed_game_code))
