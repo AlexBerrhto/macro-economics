@@ -7,5 +7,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Use shell form for CMD so $PORT gets resolved dynamically by Render
-CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}
+# Run uvicorn via python module invocation
+CMD ["sh", "-c", "python -m uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
