@@ -4,7 +4,7 @@ import uvicorn
 
 # Initialize Socket.IO server with CORS enabled for cross-origin mobile access
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
-app = socketio.ASGIApp(sio)
+app = socketio.ASGIApp(sio, static_files={'/': 'index.html'})
 
 # Server-Side Game State
 game_state = {
